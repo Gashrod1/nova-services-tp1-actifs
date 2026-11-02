@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cartographie NOVA SERVICES</title>
+<style>
+  :root { --bg:#ffffff; --fg:#1f2937; --muted:#6b7280; --line:#e5e7eb; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg);
+         font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; line-height:1.45; }
+  header { max-width:1400px; margin:0 auto 12px; }
+  h1 { font-size:1.4rem; margin:0 0 4px; }
+  p.sub { margin:0; color:var(--muted); font-size:.95rem; }
+  .bar { display:flex; gap:8px; flex-wrap:wrap; margin:12px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid #9ca3af; border-radius:6px; background:#f9fafb; cursor:pointer; }
+  button:hover { background:#f3f4f6; }
+  .legend { max-width:1400px; margin:0 auto 12px; display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:6px 16px; font-size:.9rem; }
+  .legend span.sw { display:inline-block; width:18px; height:14px; vertical-align:-2px; margin-right:6px; border:2px solid; }
+  #wrap { max-width:1400px; margin:0 auto; border:1px solid var(--line); border-radius:8px; padding:8px; overflow:auto; }
+  #err { color:#b91c1c; white-space:pre-wrap; }
+  footer { max-width:1400px; margin:12px auto 0; color:var(--muted); font-size:.85rem; }
+  @media print { .bar { display:none; } #wrap { border:none; overflow:visible; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Cartographie du SI de NOVA SERVICES (TP1, Partie 8)</h1>
+  <p class="sub">Zones d'hébergement, actifs métier et techniques, points d'entrée, collecte des événements. Identifiants A01 à A31 = registre de la Partie 5.</p>
+  <div class="bar">
+    <button id="svg">Télécharger en SVG</button>
+    <button id="zoom">Zoom : taille réelle / ajustée</button>
+    <button onclick="window.print()">Imprimer / PDF</button>
+  </div>
+</header>
+<section class="legend" aria-label="Légende">
+  <div><span class="sw" style="background:#fde68a;border-color:#b45309;border-radius:9px"></span>Actif métier (forme arrondie)</div>
+  <div><span class="sw" style="background:#dbeafe;border-color:#1d4ed8"></span>Actif technique (rectangle)</div>
+  <div><span class="sw" style="background:#e0e7ff;border-color:#4338ca;border-radius:3px 3px 9px 9px"></span>Donnée ou stockage (cylindre)</div>
+  <div><span class="sw" style="background:#fecaca;border-color:#b91c1c"></span>Point d'entrée (hexagone)</div>
+  <div><span class="sw" style="background:#d1fae5;border-color:#047857;border-radius:5px"></span>Sécurité et collecte (bords arrondis)</div>
+  <div>Zones : gris = Internet · violet = SaaS · bleu = interne · orange = AWS</div>
+  <div>Flèche pleine = flux décrit par le sujet · pointillés = <strong>à confirmer</strong></div>
+</section>
+<div id="wrap"><pre class="mermaid">
+flowchart LR
+  subgraph NET["Zone Internet"]
+    CLI["Clients"]
+    TT["Collaborateurs en télétravail"]
+    PRE["Prestataires externes"]
+  end
+
+  subgraph SAAS["Zone SaaS"]
+    M365["Microsoft 365&lt;br/&gt;Exchange, SharePoint, Teams"]
+  end
+
+  subgraph MET["Actifs métier"]
+    DC(["Données clients A01"])
+    SRV(["Services rendus aux clients A02"])
+    CODE(["Code source A03"])
+  end
+
+  subgraph INT["Zone infrastructure interne"]
+    FW{{"OPNsense pare-feu A11"}}
+    VPNC{{"VPN collaborateurs A12"}}
+    VPNF{{"VPN fournisseurs A21"}}
+    ING{{"Ingress Kubernetes"}}
+    subgraph K8S["Cluster Kubernetes interne"]
+      APP["Applications web et API A02"]
+      KAPI["API Kubernetes, RBAC, Secrets&lt;br/&gt;A22 A23 A24"]
+    end
+    KC["Keycloak SSO MFA A04"]
+    PG[("PostgreSQL A05")]
+    KAF["Kafka A13"]
+    GL["GitLab et CI/CD A07&lt;br/&gt;Trivy, SonarQube, Terraform"]
+    REG[("Registre d'images A14")]
+    VAULT["HashiCorp Vault A09"]
+    SMB[("Serveur de fichiers Samba A16")]
+    BKP[("Serveur de sauvegarde A10")]
+    DNS["DNS interne A18"]
+    PC["Postes et portables A17"]
+    ADM["Ansible et serveurs d'admin A30"]
+    subgraph SOC["Collecte et analyse"]
+      WZ("Wazuh SIEM")
+      OS("OpenSearch")
+      GF("Grafana")
+      SUR("Suricata et Zeek")
+      PL("Prometheus et Loki")
+    end
+  end
+
+  subgraph AWS["Zone AWS"]
+    LB{{"AWS Load Balancer A26"}}
+    EKS["Amazon EKS A06"]
+    RDS[("Amazon RDS A05")]
+    S3[("Amazon S3 A25 et copies A10")]
+    ECR[("Amazon ECR A14")]
+    IAM["AWS IAM A08"]
+  end
+
+  CLI -->|"HTTPS"| FW
+  CLI -->|"HTTPS"| LB
+  TT -->|"tunnel VPN"| VPNC
+  PRE -->|"tunnel VPN maintenance"| VPNF
+  VPNC -.->|"terminaison sur OPNsense à confirmer"| FW
+  VPNF -.->|"terminaison sur OPNsense à confirmer"| FW
+  FW -->|"flux autorisés"| ING
+  ING -->|"routage HTTP"| APP
+  APP -->|"authentification OIDC"| KC
+  APP -->|"requêtes SQL"| PG
+  APP -->|"événements métier"| KAF
+  APP -->|"résolution de noms"| DNS
+  APP -.->|"secrets applicatifs à confirmer"| VAULT
+  KC -.->|"base Keycloak à confirmer"| PG
+  KC -->|"fédération d'identité"| M365
+  PC -->|"mail et documents"| M365
+  PC -->|"partage SMB"| SMB
+  GL -->|"publication des images"| REG
+  REG -->|"pull des images"| APP
+  GL -->|"déploiement"| KAPI
+  GL -->|"déploiement et Terraform"| IAM
+  ADM -->|"configuration SSH"| PG
+  FW <-->|"liaison VPN interne - AWS"| LB
+  LB -->|"routage"| EKS
+  EKS -->|"requêtes SQL"| RDS
+  EKS -->|"pull des images"| ECR
+  EKS -.->|"fichiers et artefacts à confirmer"| S3
+  IAM -->|"autorise les accès"| EKS
+  IAM -->|"autorise les accès"| S3
+  PG -->|"sauvegarde"| BKP
+  SMB -->|"sauvegarde"| BKP
+  BKP -.->|"copie externalisée à confirmer"| S3
+
+  KC -->|"événements d'authentification"| WZ
+  FW -->|"journaux de flux"| WZ
+  GL -->|"journaux d'audit"| WZ
+  KAPI -->|"audit logs"| WZ
+  SUR -->|"alertes réseau"| WZ
+  IAM -.->|"CloudTrail à confirmer"| WZ
+  WZ -->|"indexation"| OS
+  OS -->|"tableaux de bord"| GF
+  PL -->|"métriques et logs"| GF
+
+  PG ---|"contient"| DC
+  RDS -.->|"contient, répartition à confirmer"| DC
+  APP ---|"supporte"| SRV
+  EKS ---|"supporte"| SRV
+  GL ---|"contient"| CODE
+
+  subgraph LEG["Légende"]
+    L1(["Actif métier"])
+    L2["Actif technique"]
+    L3[("Donnée ou stockage")]
+    L4{{"Point d'entrée"}}
+    L5("Sécurité et collecte")
+    L6["Flux plein = confirmé · pointillé = à confirmer"]
+  end
+
+  classDef metier fill:#fde68a,stroke:#b45309,color:#1f2937,stroke-width:2px
+  classDef technique fill:#dbeafe,stroke:#1d4ed8,color:#1f2937
+  classDef stockage fill:#e0e7ff,stroke:#4338ca,color:#1f2937
+  classDef entree fill:#fecaca,stroke:#b91c1c,color:#1f2937,stroke-width:2px
+  classDef secu fill:#d1fae5,stroke:#047857,color:#1f2937
+  classDef note fill:#ffffff,stroke:#9ca3af,color:#374151,stroke-dasharray:4 3
+
+  class DC,SRV,CODE,L1 metier
+  class APP,KAPI,KC,KAF,GL,VAULT,DNS,PC,ADM,EKS,IAM,M365,CLI,TT,PRE,L2 technique
+  class PG,REG,SMB,BKP,RDS,S3,ECR,L3 stockage
+  class FW,VPNC,VPNF,ING,LB,L4 entree
+  class WZ,OS,GF,SUR,PL,L5 secu
+  class L6 note
+
+  style NET fill:#f3f4f6,stroke:#6b7280
+  style SAAS fill:#faf5ff,stroke:#7e22ce
+  style INT fill:#f0f9ff,stroke:#0369a1
+  style AWS fill:#fff7ed,stroke:#c2410c
+  style MET fill:#fffbeb,stroke:#b45309
+  style SOC fill:#ecfdf5,stroke:#047857
+  style K8S fill:#eff6ff,stroke:#1d4ed8,stroke-dasharray:5 3
+  style LEG fill:#ffffff,stroke:#9ca3af
+</pre><div id="err"></div></div>
+<footer>Les flux en pointillés ne sont pas confirmés par la description du SI fournie par la DSI. Schéma de décision, non exhaustif.</footer>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({ startOnLoad:false, theme:"default", securityLevel:"strict",
+                       flowchart:{ htmlLabels:true, curve:"basis", useMaxWidth:true } });
+  mermaid.run({ querySelector:".mermaid" }).catch(function (e) {
+    document.getElementById("err").textContent = "Erreur Mermaid : " + (e && e.message ? e.message : e);
+  });
+  document.getElementById("zoom").addEventListener("click", function () {
+    var s = document.querySelector("#wrap svg");
+    if (!s) return;
+    if (s.dataset.full) { s.style.maxWidth = s.dataset.mw; s.style.width = "100%"; delete s.dataset.full; }
+    else { s.dataset.mw = s.style.maxWidth; s.dataset.full = "1"; s.style.width = (parseFloat(s.style.maxWidth) * 1.6) + "px"; s.style.maxWidth = "none"; }
+  });
+  document.getElementById("svg").addEventListener("click", function () {
+    var s = document.querySelector("#wrap svg");
+    if (!s) return;
+    var blob = new Blob([new XMLSerializer().serializeToString(s)], { type:"image/svg+xml" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = "cartographie-nova-services.svg"; a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+  });
+</script>
+</body>
+</html>
